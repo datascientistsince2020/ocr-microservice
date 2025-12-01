@@ -91,7 +91,7 @@ class ExtractRequest(BaseModel):
     page_number: int
     dpi: int = 50
     format: str = "json"
-    max_tokens: int = 4096
+    max_tokens: int = 512
     temperature: float = 0.0
 
 
@@ -232,8 +232,8 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
     if not ocr_model or not ocr_processor:
         raise HTTPException(status_code=500, detail="OCR model not loaded")
 
-    # Enforce token limits
-    max_tokens = min(max(max_tokens, 1024), 8192)
+    # Enforce token limits (keep small on CPU to avoid long Koyeb timeouts)
+    max_tokens = max(64, min(max_tokens, 2048))
 
     # Extract image
     image = extract_pdf_page(pdf_path, page_number, dpi=dpi, max_size=896)
@@ -329,7 +329,7 @@ async def extract_text(
     page_number: int = Form(...),
     dpi: int = Form(50),
     format: str = Form("json"),
-    max_tokens: int = Form(4096),
+    max_tokens: int = Form(512),
     temperature: float = Form(0.0)
 ):
     """Extract text from a specific PDF page"""
