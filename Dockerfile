@@ -4,13 +4,15 @@ FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 # Set working directory
 WORKDIR /app
 
+# Accept Microsoft fonts EULA non-interactively
+RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections
+
 # Install system dependencies (official olmOCR requirements)
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-pip \
     poppler-utils \
     ttf-mscorefonts-installer \
-    msttcorefonts \
     fonts-crosextra-caladea \
     fonts-crosextra-carlito \
     gsfonts \
