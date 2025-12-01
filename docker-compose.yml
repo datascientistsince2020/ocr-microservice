@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  ocr-service:
+    build: .
+    container_name: ocr-service
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount model directory (adjust path as needed)
+      - ./models:/app/models:ro
+      # Mount uploads for persistence (optional)
+      - ./uploads:/tmp/ocr-uploads
+    environment:
+      - DEVICE_TYPE=auto
+      - MODEL_PATH=/app/models/olmOCR-2-7B-1025-4bit
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Optional: CPU-only version (remove gpu requirement)
+  ocr-service-cpu:
+    build: .
+    container_name: ocr-service-cpu
+    ports:
+      - "8002:8001"
+    volumes:
+      - ./models:/app/models:ro
+      - ./uploads:/tmp/ocr-uploads
+    environment:
+      - DEVICE_TYPE=cpu
+      - MODEL_PATH=/app/models/olmOCR-2-7B-1025-4bit
+    restart: unless-stopped
+    profiles:
+      - cpu
