@@ -50,11 +50,11 @@ if DEVICE == "mlx":
     print("[STARTUP] Using MLX backend for Apple Silicon")
 elif DEVICE == "cuda":
     import torch
-    from transformers import AutoProcessor, AutoModelForVision2Seq
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
     print("[STARTUP] Using CUDA backend for NVIDIA GPU")
 else:
     import torch
-    from transformers import AutoProcessor, AutoModelForVision2Seq
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
     print("[STARTUP] Using CPU backend with transformers")
 
 app = FastAPI(
@@ -75,7 +75,11 @@ app.add_middleware(
 # Configuration
 UPLOAD_DIR = Path("/tmp/ocr-uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Model configuration - supports local path or HuggingFace repo
 MODEL_PATH = os.getenv("MODEL_PATH", "models/olmOCR-2-7B-1025-4bit")
+HF_MODEL_REPO = os.getenv("HF_MODEL_REPO", "allenai/olmOCR-2-7B-1025-4bit")  # 4-bit quantized model
+USE_HF = os.getenv("USE_HF", "true").lower() == "true"  # Default to HuggingFace
 
 # Global OCR service instance
 ocr_model = None
@@ -95,33 +99,68 @@ class ExtractRequest(BaseModel):
 async def startup_event():
     """Load OCR model on startup"""
     global ocr_model, ocr_processor, ocr_config
-    try:
-        print(f"[STARTUP] Loading OCR model from: {MODEL_PATH}")
 
+    # Determine model source
+    if USE_HF:
+        model_source = HF_MODEL_REPO
+        print(f"[STARTUP] Using HuggingFace model: {model_source}")
+        print(f"[INFO] Model will be downloaded and cached automatically")
+    else:
+        model_source = MODEL_PATH
+        print(f"[STARTUP] Using local model: {model_source}")
+
+        # Check if local model exists
+        if not Path(model_source).exists():
+            print(f"[ERROR] Local model not found at: {model_source}")
+            print(f"[INFO] Please either:")
+            print(f"  1. Mount model volume: -v /path/to/models:/app/models")
+            print(f"  2. Use HuggingFace: -e USE_HF=true -e HF_MODEL_REPO=repo-name")
+            print(f"  3. Set correct MODEL_PATH: -e MODEL_PATH=/correct/path")
+            raise FileNotFoundError(f"Model not found at {model_source}")
+
+    try:
         if DEVICE == "mlx":
             # Load with MLX
-            ocr_model, ocr_processor = mlx_vlm.load(MODEL_PATH)
-            ocr_config = load_config(MODEL_PATH)
+            ocr_model, ocr_processor = mlx_vlm.load(model_source)
+            ocr_config = load_config(model_source)
             print("[STARTUP] OCR model loaded successfully with MLX")
 
         elif DEVICE == "cuda":
-            # Load with transformers on CUDA
-            ocr_processor = AutoProcessor.from_pretrained(MODEL_PATH)
-            ocr_model = AutoModelForVision2Seq.from_pretrained(
-                MODEL_PATH,
-                torch_dtype=torch.float16,
-                device_map="auto"
-            ).to("cuda")
+            # Load with transformers on CUDA using Qwen2.5-VL
+            print(f"[STARTUP] Loading processor from Qwen/Qwen2.5-VL-7B-Instruct...")
+            ocr_processor = AutoProcessor.from_pretrained(
+                "Qwen/Qwen2.5-VL-7B-Instruct",
+                trust_remote_code=True
+            )
+
+            print(f"[STARTUP] Loading model from {model_source}...")
+            ocr_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                model_source,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                trust_remote_code=True
+            ).eval()
             print("[STARTUP] OCR model loaded successfully with CUDA")
 
         else:
-            # Load with transformers on CPU
-            ocr_processor = AutoProcessor.from_pretrained(MODEL_PATH)
-            ocr_model = AutoModelForVision2Seq.from_pretrained(MODEL_PATH)
+            # Load with transformers on CPU using Qwen2.5-VL
+            print(f"[STARTUP] Loading processor from Qwen/Qwen2.5-VL-7B-Instruct...")
+            ocr_processor = AutoProcessor.from_pretrained(
+                "Qwen/Qwen2.5-VL-7B-Instruct",
+                trust_remote_code=True
+            )
+
+            print(f"[STARTUP] Loading model from {model_source}...")
+            ocr_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                model_source,
+                trust_remote_code=True
+            ).eval()
             print("[STARTUP] OCR model loaded successfully with CPU")
 
     except Exception as e:
         print(f"[ERROR] Failed to load OCR model: {str(e)}")
+        print(f"[ERROR] Model source: {model_source}")
+        print(f"[ERROR] Device: {DEVICE}")
         raise
 
 
@@ -226,47 +265,51 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
                 output_text = str(output)
 
         else:
-            # CUDA/CPU backend with transformers
-            # Format messages for chat template
+            # CUDA/CPU backend with Qwen2.5-VL
+            # Format messages for chat template (following olmOCR example)
             messages = [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": prompt}
+                        {"type": "text", "text": prompt},
+                        {"type": "image"}
                     ]
                 }
             ]
 
             # Apply chat template
-            prompt_text = ocr_processor.apply_chat_template(
+            text = ocr_processor.apply_chat_template(
                 messages,
+                tokenize=False,
                 add_generation_prompt=True
             )
 
             # Process inputs
             inputs = ocr_processor(
-                text=prompt_text,
-                images=image,
+                text=[text],
+                images=[image],
+                padding=True,
                 return_tensors="pt"
             )
 
             # Move to device
-            if DEVICE == "cuda":
-                inputs = {k: v.to("cuda") for k, v in inputs.items()}
+            device = torch.device("cuda" if DEVICE == "cuda" else "cpu")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
 
             # Generate
             with torch.no_grad():
-                output_ids = ocr_model.generate(
+                output = ocr_model.generate(
                     **inputs,
+                    temperature=max(temperature, 0.1),  # Min temp 0.1
                     max_new_tokens=max_tokens,
-                    temperature=temperature,
                     do_sample=temperature > 0
                 )
 
-            # Decode output
-            output_text = ocr_processor.batch_decode(
-                output_ids,
+            # Decode output (skip prompt tokens)
+            prompt_length = inputs["input_ids"].shape[1]
+            new_tokens = output[:, prompt_length:]
+            output_text = ocr_processor.tokenizer.batch_decode(
+                new_tokens,
                 skip_special_tokens=True
             )[0]
 
