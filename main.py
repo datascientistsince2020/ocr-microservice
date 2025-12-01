@@ -10,6 +10,7 @@ import gc
 from typing import Optional
 import platform
 import sys
+import time
 
 # Detect hardware and import appropriate libraries
 DEVICE_TYPE = os.getenv("DEVICE_TYPE", "auto")  # auto, mlx, cuda
@@ -233,7 +234,10 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
         raise HTTPException(status_code=500, detail="OCR model not loaded")
 
     # Enforce token limits (keep small on CPU to avoid long Koyeb timeouts)
-    max_tokens = max(64, min(max_tokens, 2048))
+    token_cap = 512 if DEVICE != "cuda" else 2048
+    max_tokens = max(64, min(max_tokens, token_cap))
+    print(f"[OCR] Starting generation | device={DEVICE} | max_tokens={max_tokens} | dpi={dpi}")
+    start_time = time.time()
 
     # Extract image
     image = extract_pdf_page(pdf_path, page_number, dpi=dpi, max_size=896)
@@ -263,6 +267,7 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
                 output_text = output.text
             else:
                 output_text = str(output)
+            print(f"[OCR] Output (mlx) preview: {str(output_text)[:400]}")
 
         else:
             # CUDA/CPU backend with Qwen2.5-VL
@@ -312,6 +317,9 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
                 new_tokens,
                 skip_special_tokens=True
             )[0]
+            duration = time.time() - start_time
+            print(f"[OCR] Generation complete in {duration:.2f}s | output_tokens={new_tokens.shape[1]}")
+            print(f"[OCR] Output (qwen) preview: {output_text[:400]}")
 
     finally:
         # Cleanup
@@ -319,6 +327,9 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
         gc.collect()
         if DEVICE == "cuda":
             torch.cuda.empty_cache()
+        if 'start_time' in locals():
+            total = time.time() - start_time
+            print(f"[OCR] Cleanup complete | total_time={total:.2f}s")
 
     return output_text
 
