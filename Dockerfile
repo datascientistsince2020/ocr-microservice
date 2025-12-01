@@ -11,6 +11,7 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-pip \
+    curl \
     poppler-utils \
     ttf-mscorefonts-installer \
     fonts-crosextra-caladea \
@@ -37,14 +38,15 @@ RUN mkdir -p /tmp/ocr-uploads
 ENV PYTHONUNBUFFERED=1
 ENV DEVICE_TYPE=auto
 ENV USE_HF=true
-ENV HF_MODEL_REPO=allenai/olmOCR-2-7B-1025
+ENV HF_MODEL_REPO=allenai/olmOCR-2-7B-1025-FP8
 
 # Expose port
 EXPOSE 8001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8001/health')"
+# Health check (very generous timing for model download on first deployment)
+# start-period: 15 mins, interval: 15 mins, retries: 3 (total ~45 mins grace period)
+HEALTHCHECK --interval=900s --timeout=30s --start-period=900s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
 
 # Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
