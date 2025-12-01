@@ -23,6 +23,7 @@ transformers>=4.45.0
 accelerate>=0.25.0
 huggingface_hub>=0.20.0
 qwen-vl-utils
+compressed-tensors
 
 # Utilities
 python-dotenv==1.0.0
