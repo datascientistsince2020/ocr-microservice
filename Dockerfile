@@ -24,9 +24,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install olmOCR with GPU support and dependencies
-RUN pip3 install --no-cache-dir olmocr[gpu] --extra-index-url https://download.pytorch.org/whl/cu128 && \
-    pip3 install --no-cache-dir https://download.pytorch.org/whl/cu128/flashinfer/flashinfer_python-0.2.5%2Bcu128torch2.7-cp38-abi3-linux_x86_64.whl || true && \
-    pip3 install --no-cache-dir -r requirements.txt
+# Install PyTorch CUDA 12.1 wheels (match base image)
+RUN pip3 install --no-cache-dir torch==2.1.2+cu121 torchvision==0.16.2+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# Install olmOCR with GPU support and remaining dependencies (use same CUDA index)
+RUN pip3 install --no-cache-dir olmocr[gpu] --extra-index-url https://download.pytorch.org/whl/cu121 && \
+    pip3 install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
 
 # Copy application code
 COPY main.py .

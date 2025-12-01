@@ -234,7 +234,7 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
         raise HTTPException(status_code=500, detail="OCR model not loaded")
 
     # Enforce token limits (keep small on CPU to avoid long Koyeb timeouts)
-    token_cap = 512 if DEVICE != "cuda" else 2048
+    token_cap = 512 if DEVICE != "cuda" else 512
     max_tokens = max(64, min(max_tokens, token_cap))
     print(f"[OCR] Starting generation | device={DEVICE} | max_tokens={max_tokens} | dpi={dpi}")
     start_time = time.time()
@@ -258,7 +258,7 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
                 formatted_prompt,
                 [image],
                 max_tokens=max_tokens,
-                temperature=temperature,
+                # MLX backend ignores temperature; keep call minimal to avoid warnings
                 verbose=False
             )
 
@@ -302,12 +302,19 @@ def ocr_pdf_page(pdf_path: str, page_number: int, prompt: str,
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
             # Generate
+            do_sample = temperature > 0
+            gen_kwargs = {
+                "max_new_tokens": max_tokens,
+                "do_sample": do_sample,
+            }
+            if do_sample:
+                # Only pass temperature when sampling to avoid "invalid flag" warnings
+                gen_kwargs["temperature"] = max(temperature, 0.1)
+
             with torch.no_grad():
                 output = ocr_model.generate(
                     **inputs,
-                    temperature=max(temperature, 0.1),  # Min temp 0.1
-                    max_new_tokens=max_tokens,
-                    do_sample=temperature > 0
+                    **gen_kwargs
                 )
 
             # Decode output (skip prompt tokens)
@@ -344,7 +351,7 @@ async def extract_text(
     temperature: float = Form(0.0)
 ):
     """Extract text from a specific PDF page"""
-    print(f"[EXTRACT] Request - File: {filename}, Page: {page_number}, Format: {format}")
+    print(f"[EXTRACT] Request start | file={filename} page={page_number} format={format} max_tokens={max_tokens} dpi={dpi} device={DEVICE}")
 
     file_path = UPLOAD_DIR / filename
 

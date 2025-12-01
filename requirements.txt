@@ -16,9 +16,9 @@ Pillow==10.1.0
 mlx==0.0.8; platform_system == "Darwin" and platform_machine == "arm64"
 mlx-vlm==0.0.4; platform_system == "Darwin" and platform_machine == "arm64"
 
-# For CUDA/CPU - transformers backend
-torch>=2.1.1
-torchvision>=0.16.0
+# For CUDA backend (match nvidia/cuda:12.1 base); install with cu121 index
+torch==2.1.2+cu121
+torchvision==0.16.2+cu121
 transformers>=4.45.0
 accelerate>=0.25.0
 huggingface_hub>=0.20.0
