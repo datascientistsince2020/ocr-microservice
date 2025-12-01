@@ -4,18 +4,26 @@ FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (official olmOCR requirements)
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-pip \
     poppler-utils \
+    ttf-mscorefonts-installer \
+    msttcorefonts \
+    fonts-crosextra-caladea \
+    fonts-crosextra-carlito \
+    gsfonts \
+    lcdf-typetools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install olmOCR with GPU support and dependencies
+RUN pip3 install --no-cache-dir olmocr[gpu] --extra-index-url https://download.pytorch.org/whl/cu128 && \
+    pip3 install --no-cache-dir https://download.pytorch.org/whl/cu128/flashinfer/flashinfer_python-0.2.5%2Bcu128torch2.7-cp38-abi3-linux_x86_64.whl || true && \
+    pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY main.py .
@@ -26,7 +34,8 @@ RUN mkdir -p /tmp/ocr-uploads
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DEVICE_TYPE=auto
-ENV MODEL_PATH=/app/models/olmOCR-2-7B-1025-4bit
+ENV USE_HF=true
+ENV HF_MODEL_REPO=allenai/olmOCR-2-7B-1025
 
 # Expose port
 EXPOSE 8001

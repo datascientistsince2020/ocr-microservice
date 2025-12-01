@@ -7,17 +7,21 @@ pydantic==2.5.0
 # PDF processing
 pdf2image==1.16.3
 Pillow==10.1.0
-poppler-utils
+# Note: poppler-utils is a system package, install with:
+# - Ubuntu/Debian: apt-get install poppler-utils
+# - macOS: brew install poppler
+# - Windows: Download from http://blog.alivate.com.au/poppler-windows/
 
 # For MLX (Apple Silicon) - install only on macOS ARM
 mlx==0.0.8; platform_system == "Darwin" and platform_machine == "arm64"
 mlx-vlm==0.0.4; platform_system == "Darwin" and platform_machine == "arm64"
 
 # For CUDA/CPU - transformers backend
-torch==2.1.1
-transformers==4.36.0
-accelerate==0.25.0
-huggingface_hub==0.20.0
+torch>=2.1.1
+transformers>=4.45.0
+accelerate>=0.25.0
+huggingface_hub>=0.20.0
+qwen-vl-utils
 
 # Utilities
 python-dotenv==1.0.0
